@@ -594,6 +594,10 @@ def test_link_with_a_key_in_the_query_is_blocked_by_the_scrubber():
     {"url": "not a link"},
     {},
     {"url": "https://example.com/a", "file_path": "/tmp/x.md"},
+    # control characters could fake extra lines in the approval prompt
+    {"url": "https://example.com/a\nNotebook: 'Trusted'"},
+    {"url": "https://example.com/a\rx"},
+    {"file_path": "/tmp/x.md\nSize: 1 bytes"},
 ])
 def test_add_source_input_shape_is_checked(kwargs):
     with pytest.raises(Exception) as err:
@@ -619,7 +623,7 @@ def test_local_file_is_uploaded_only_after_the_person_approves(tmp_path):
     out, asked = ask("open_notebook_add_source", {"notebook_id": NB, "file_path": str(f), "confirm": True},
                      True, seen=seen)
     assert out["created"] is True and out["approved_by"] == "person"
-    assert f"File: {f.resolve()}" in asked[0] and f"Size: {f.stat().st_size} bytes" in asked[0]
+    assert f"File: {str(f.resolve())!r}" in asked[0] and f"Size: {f.stat().st_size} bytes" in asked[0]
     post = [r for r in seen if r.method == "POST" and r.url.path == "/api/sources"][0]
     assert post.headers["content-type"].startswith("multipart/form-data")
     assert b"Plain text for the notebook." in post.content and b'name="file"' in post.content

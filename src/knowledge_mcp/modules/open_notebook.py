@@ -240,6 +240,10 @@ def _scan(config: Config, tool: str, *fields: tuple[str, str], details: dict) ->
 def _link_parts(raw: str) -> tuple[str, str]:
     """Validate a web link. Returns (the link as sent, the link without query or fragment)."""
     link = raw.strip()
+    # Control characters (newlines included) could fake extra lines in the approval prompt. Refuse them.
+    if any(ord(c) < 32 or ord(c) == 127 for c in link) or " " in link:
+        raise KnowledgeError(MODULE, "bad_input", "url contains spaces or control characters.",
+                             "pass one plain web address. Nothing was sent.")
     parts = urlsplit(link)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise KnowledgeError(MODULE, "bad_input", "url must start with http:// or https:// and name a host.",
@@ -256,6 +260,9 @@ def _local_file(raw: str, config: Config, details: dict) -> tuple[Path, bytes, s
 
     Nothing is sent here. The bytes are used only if the person then approves the exact path and size.
     """
+    if any(ord(c) < 32 or ord(c) == 127 for c in raw):
+        raise KnowledgeError(MODULE, "bad_input", "file_path contains control characters.",
+                             "give a plain path to a file on this computer. Nothing was sent.")
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise KnowledgeError(MODULE, "bad_input", "no file at that path.",
@@ -590,7 +597,7 @@ class OpenNotebookModule(Module):
                 _scan(config, "open_notebook_add_source", (link, "url"), *([(title, "title")] if title else []),
                       details=details)
                 path, data, scan, size, label = None, None, "not needed (a link)", None, display
-                question = ["Add this link to Open Notebook?", f"Notebook: {name!r}", f"Link: {link}"]
+                question = ["Add this link to Open Notebook?", f"Notebook: {name!r}", f"Link: {link!r}"]
             else:
                 kind = "file"
                 details = {"notebook": name, "kind": kind, "target": Path(file_path).name, "title": title}
@@ -599,7 +606,7 @@ class OpenNotebookModule(Module):
                 details.update(size_bytes=size)
                 if title:
                     _scan(config, "open_notebook_add_source", (title, "title"), details=details)
-                question = ["Upload this file to Open Notebook?", f"Notebook: {name!r}", f"File: {path}",
+                question = ["Upload this file to Open Notebook?", f"Notebook: {name!r}", f"File: {str(path)!r}",
                             f"Size: {size} bytes", f"Credential scan: {scan}"]
             if title:
                 question.append(f"Title: {title!r}")

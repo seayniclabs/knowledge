@@ -12,6 +12,8 @@ Knowledge follows [semantic versioning](https://semver.org). Modules added after
 - **Trust.** `SECURITY.md`, a security card in the README generated from the live server, a tool-description lock (`tool-manifest.lock.json`), and CI checks for skills, the lock and the card.
 - **Packaging.** The Claude Code plugin manifest (`.claude-plugin/plugin.json`) and `.mcp.json` pin `knowledge-bundle-mcp==0.2.0`.
 - Verified against Open Notebook's source: source creation is `POST /api/sources` (form fields; a local file is sent as an upload), with `async_processing` returning a `command_id`.
+- Security: links and file paths with control characters are refused, and the approval prompt quotes every value, so a crafted link can't fake lines in the prompt.
+- Not yet verified against a live Open Notebook: the upload request of `open_notebook_add_source` (tested with mocks built from Open Notebook's source code).
 
 ## 0.1.1 — 2026-10-27
 
