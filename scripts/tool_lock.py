@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -26,6 +27,13 @@ from knowledge_mcp.config import Config  # noqa: E402
 from knowledge_mcp.server import build_server  # noqa: E402
 
 
+
+def _clean(d: dict) -> dict:
+    """Same text on every Python: 3.13 strips docstring indentation, earlier versions keep it."""
+    if d.get("description"):
+        d["description"] = inspect.cleandoc(d["description"])
+    return d
+
 def digest(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -34,10 +42,10 @@ def snapshot() -> dict:
     srv = build_server(Config(env={}, file_data={}))
     tools = asyncio.run(srv.list_tools())
     prompts = asyncio.run(srv.list_prompts())
-    entries = {f"tool:{t.name}": digest(t.model_dump(exclude_none=True, mode="json")) for t in tools}
+    entries = {f"tool:{t.name}": digest(_clean(t.model_dump(exclude_none=True, mode="json"))) for t in tools}
     for p in prompts:
         text = asyncio.run(srv.get_prompt(p.name)).messages[0].content.text
-        entries[f"prompt:{p.name}"] = digest({"description": p.description, "text": text})
+        entries[f"prompt:{p.name}"] = digest({"description": inspect.cleandoc(p.description or ""), "text": text})
     entries["instructions"] = digest(srv.instructions or "")
     return {"bundle": "knowledge", "version": __version__, "entries": dict(sorted(entries.items()))}
 

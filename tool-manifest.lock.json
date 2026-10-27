@@ -10,13 +10,13 @@
     "prompt:obsidian-markdown": "83f7f5ade38104322990f7f946ad90dbee0695b84c0304fd999572d372a4ecb0",
     "prompt:research-with-sources": "8f4bc4d57ea74cef6b2d17b3560ae31983a4d409be90d5e26c6857170ed86fad",
     "prompt:weekly-review": "2be66fb284e76af75027715fca974b3fc83e7ca9050775e5be5d2aaf5db869ad",
-    "tool:knowledge_modules": "cfcb913dbb7021502ef12adb2eed116786883437195a2364c0fddeee2fed8e1e",
-    "tool:open_notebook_add_source": "7f061f324c524d1081d3d91042ce65c8db223e9fe166d788fc654e93a2c5e99e",
-    "tool:open_notebook_note_create": "2e2d4cdf0d8904cac8cf4cb42ba5252399f5e34ffe95ab44aeee2315afee616a",
+    "tool:knowledge_modules": "971e4ef6d900491569f7febf092313c18581d989afa5678b99e3fa3b003796f4",
+    "tool:open_notebook_add_source": "e3e160b23d94f8460fc45ae57723b1487f9899e2ab8730758c6fcdad2c11b25c",
+    "tool:open_notebook_note_create": "d6bf83cecd5a6b22ff42989aea23399047a1e01a882c682b8f67baeb083ed083",
     "tool:open_notebook_note_get": "a6e34d7bc6a0edb74a59e553f48819b3b95c66ccd481fef61fbca975a7029fe9",
     "tool:open_notebook_notebooks": "990c2eb3ca8bd505d5451a8be34a33cd40d65bd36ae69ca4bfa96c765cf7f3c9",
-    "tool:open_notebook_notes": "0775b85522ca40762db81a90736ee7445b002fb372b695e51363ae54630f505f",
-    "tool:open_notebook_search": "a8e860d16df3ee29f7a8a6b9bbd5d90662fa7cb462e405bf444caf8888c564b3",
-    "tool:open_notebook_source_get": "718ca7115d37e63a5a88ca4a25c43acac79638e59f0c391e9e7b51c14319d353"
+    "tool:open_notebook_notes": "16c57f5a10877ac8496b202b54e14be9c91effc2f06020a92cfb7ccd7c607e93",
+    "tool:open_notebook_search": "0832ebfb9f1c5cc98c10f13ff3cc50320ef364562662804cf55ef3f9fa477d72",
+    "tool:open_notebook_source_get": "fe9970de079d2cd5bd6d0692769c5c767c24c51885cacac527660d7707e89b86"
   }
 }

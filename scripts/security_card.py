@@ -9,6 +9,7 @@ Usage: python scripts/security_card.py   (paste the output into the README, or u
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import sys
@@ -25,12 +26,19 @@ FILES = "Reads its config file (~/.config/knowledge/config.toml). Reads a local 
 SECRETS = "API keys and passwords come from your environment or config file. They are never tool arguments and never returned to the model."
 
 
+
+def _clean(d: dict) -> dict:
+    """Same text on every Python: 3.13 strips docstring indentation, earlier versions keep it."""
+    if d.get("description"):
+        d["description"] = inspect.cleandoc(d["description"])
+    return d
+
 def card() -> str:
     srv = build_server(Config(env={}, file_data={}))
     tools = asyncio.run(srv.list_tools())
     prompts = asyncio.run(srv.list_prompts())
-    startup = (srv.instructions or "") + json.dumps([t.model_dump(exclude_none=True, mode="json") for t in tools]) \
-        + json.dumps([p.model_dump(exclude_none=True, mode="json") for p in prompts])
+    startup = (srv.instructions or "") + json.dumps([_clean(t.model_dump(exclude_none=True, mode="json")) for t in tools]) \
+        + json.dumps([_clean(p.model_dump(exclude_none=True, mode="json")) for p in prompts])
     read_only = [t.name for t in tools if t.annotations and t.annotations.readOnlyHint]
     gated = [t.name for t in tools if not (t.annotations and t.annotations.readOnlyHint)]
     return "\n".join([

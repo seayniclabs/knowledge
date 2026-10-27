@@ -361,8 +361,7 @@ def test_stdio_process_starts_with_empty_env(tmp_path):
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
     ]
-    out, _ = proc.communicate("".join(json.dumps(m) + "\n" for m in msgs), timeout=60)
-    replies = {r.get("id"): r for r in map(json.loads, out.splitlines()) if r.get("id")}
+    replies = _exchange(proc, msgs)
     from knowledge_mcp import __version__
     assert replies[1]["result"]["serverInfo"] == {"name": "knowledge", "version": __version__}
     assert {t["name"] for t in replies[2]["result"]["tools"]} == ALL
@@ -484,8 +483,7 @@ def test_stdio_lists_prompts_too(tmp_path):
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "prompts/list"},
     ]
-    out, _ = proc.communicate("".join(json.dumps(m) + "\n" for m in msgs), timeout=60)
-    replies = {r.get("id"): r for r in map(json.loads, out.splitlines()) if r.get("id")}
+    replies = _exchange(proc, msgs)
     assert {p["name"] for p in replies[2]["result"]["prompts"]} == SKILL_NAMES
 
 
@@ -695,3 +693,28 @@ def test_doctor_names_the_password_variable_on_401(capsys):
     transport = httpx.MockTransport(lambda r: httpx.Response(401, json={"detail": "Invalid password"}))
     assert doctor_run(Config(env=OPEN, file_data={}), transport=transport) == 1
     assert "KNOWLEDGE_OPEN_NOTEBOOK_PASSWORD" in capsys.readouterr().out
+
+
+def _exchange(proc, msgs, timeout=60):
+    """Send messages, then read replies until every request id has answered. Closing stdin first
+    races the server's shutdown against its last reply on fast machines."""
+    import time
+    for m in msgs:
+        proc.stdin.write(json.dumps(m) + "\n")
+        proc.stdin.flush()
+    want = {m["id"] for m in msgs if "id" in m}
+    replies, end = {}, time.time() + timeout
+    while want - set(replies) and time.time() < end:
+        line = proc.stdout.readline()
+        if not line:
+            break
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get("id") is not None:
+            replies[r["id"]] = r
+    proc.stdin.close()
+    proc.kill()
+    proc.wait()
+    return replies
