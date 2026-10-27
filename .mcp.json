@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "knowledge": {
+      "command": "uvx",
+      "args": [
+        "knowledge-bundle-mcp==0.2.0"
+      ]
+    }
+  }
+}

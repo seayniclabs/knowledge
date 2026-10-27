@@ -9,9 +9,10 @@ Auth: when the server has OPEN_NOTEBOOK_PASSWORD set, every /api call needs
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any, Literal
-
 from urllib.parse import urlsplit
 
 import httpx
@@ -19,9 +20,10 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
+from ..approvals import record as log_decision
 from ..config import Config
 from ..errors import KnowledgeError
-from ..scrub import check_text
+from ..scrub import check_text, find_credential_kinds
 from . import ClientFactory, Module, Setting
 
 MODULE = "open_notebook"
@@ -33,6 +35,14 @@ MAX_TITLE_CHARS = 200
 MAX_QUERY_CHARS = 500
 MAX_SNIPPET_CHARS = 500
 MAX_FETCH = 200  # most items any one call will ask the server for
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # largest local file add_source will send
+WRITES_SOURCE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
+# Files that hold credentials by name. add_source refuses them before anything is sent.
+CREDENTIAL_FILE = re.compile(
+    r"(?i)^(\.env(\..*)?|\.netrc|\.npmrc|\.pypirc|id_(rsa|dsa|ecdsa|ed25519)|credentials(\.json)?"
+    r"|.*\.(pem|key|p12|pfx|kdbx|keychain-db))$"
+)
+CREDENTIAL_DIRS = (".ssh", ".aws", ".gnupg")
 
 NOTEBOOK_ID = re.compile(r"notebook:[A-Za-z0-9_-]{1,120}")
 NOTE_ID = re.compile(r"note:[A-Za-z0-9_-]{1,120}")
@@ -134,6 +144,21 @@ class NoteWrite(BaseModel):
     note: str | None = None
 
 
+class SourceWrite(BaseModel):
+    created: bool = Field(description="True only when the source was sent to Open Notebook.")
+    kind: Literal["link", "file"]
+    notebook_id: str
+    notebook_name: str
+    target: str = Field(description="The link without its query string, or the file name.")
+    size_bytes: int | None = Field(None, description="Size of the local file, when kind is file.")
+    path: str | None = Field(None, description="Full path of the local file. Set only in a preview.")
+    source_id: str | None = None
+    command_id: str | None = Field(None, description="Background job that processes the source.")
+    status: str | None = Field(None, description="Processing status when the source was created, usually 'new'.")
+    approved_by: str | None = Field(None, description='"person", "allowlist" or "settings".')
+    note: str | None = None
+
+
 class WriteApproval(BaseModel):
     create: bool = Field(description="Save this note to the notebook now?")
 
@@ -202,6 +227,67 @@ def _approval_text(title: str, notebook_name: str, content: str) -> str:
     ])
 
 
+def _scan(config: Config, tool: str, *fields: tuple[str, str], details: dict) -> None:
+    """Refuse text that looks like a credential. Logs the refusal with the kinds found, never the value."""
+    for text, field in fields:
+        kinds = find_credential_kinds(text)
+        if kinds:
+            log_decision(config.env, tool, "refused", None,
+                         {**details, "reason": "blocked_secret", "field": field, "kinds": kinds})
+            check_text(text, field)  # raises the readable error
+
+
+def _link_parts(raw: str) -> tuple[str, str]:
+    """Validate a web link. Returns (the link as sent, the link without query or fragment)."""
+    link = raw.strip()
+    parts = urlsplit(link)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise KnowledgeError(MODULE, "bad_input", "url must start with http:// or https:// and name a host.",
+                             "pass the full web address of the page.")
+    if parts.username is not None or parts.password is not None:
+        raise KnowledgeError(MODULE, "bad_input", "url contains a user name or password.",
+                             "remove the user name and password from the link. Nothing was sent.")
+    display = f"{parts.scheme}://{parts.netloc}{parts.path}"
+    return link, display
+
+
+def _local_file(raw: str, config: Config, details: dict) -> tuple[Path, bytes, str]:
+    """Read a local file the person named, after the safety checks. Returns (path, bytes, scan result).
+
+    Nothing is sent here. The bytes are used only if the person then approves the exact path and size.
+    """
+    path = Path(raw).expanduser().resolve()
+    if not path.is_file():
+        raise KnowledgeError(MODULE, "bad_input", "no file at that path.",
+                             "give the full path to a file on this computer.")
+    refuse = None
+    if CREDENTIAL_FILE.match(path.name):
+        refuse = "its name suggests it holds credentials"
+    elif any((Path.home() / d) in path.parents for d in CREDENTIAL_DIRS):
+        refuse = "it is inside a folder that holds credentials"
+    if refuse:
+        log_decision(config.env, "open_notebook_add_source", "refused", None,
+                     {**details, "reason": "path_refused"})
+        raise KnowledgeError(MODULE, "path_refused", f"Knowledge will not send this file: {refuse}. Nothing was sent.",
+                             "copy the text you need into a new file without the secrets, or add a link instead.")
+    size = path.stat().st_size
+    if size == 0:
+        raise KnowledgeError(MODULE, "bad_input", "the file is empty.", "choose a file with content.")
+    if size > MAX_UPLOAD_BYTES:
+        raise KnowledgeError(MODULE, "bad_input", f"the file is {size} bytes; the limit is {MAX_UPLOAD_BYTES}.",
+                             "split the file or add a link instead.")
+    try:
+        data = path.read_bytes()
+    except OSError:
+        raise KnowledgeError(MODULE, "bad_input", "could not read the file.", "check that this process can read it.")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return path, data, "not run (the file is not plain text)"
+    _scan(config, "open_notebook_add_source", (text, "file"), details=details)
+    return path, data, "passed"
+
+
 # --- module -----------------------------------------------------------------
 
 class OpenNotebookModule(Module):
@@ -227,6 +313,8 @@ class OpenNotebookModule(Module):
                 "open_notebook_note_get": "Read one note's content.",
                 "open_notebook_source_get": "Read one source: its title, topics and extracted text.",
                 "open_notebook_note_create": "Create a note in a notebook. Preview first; you approve it.",
+                "open_notebook_add_source": "Add a web link or a local file as a source in a notebook. "
+                                            "Preview first; you approve it. Processed in the background.",
             },
         )
 
@@ -245,7 +333,8 @@ class OpenNotebookModule(Module):
             return url
 
         async def call(method: str, path: str, *, params: dict[str, Any] | None = None,
-                       json_body: dict[str, Any] | None = None) -> Any:
+                       json_body: dict[str, Any] | None = None, form: dict[str, str] | None = None,
+                       files: dict[str, tuple[str, bytes, str]] | None = None) -> Any:
             url = base_url()
             headers: dict[str, str] = {}
             password = config.get(MODULE, "password")
@@ -254,7 +343,7 @@ class OpenNotebookModule(Module):
             try:
                 async with client_factory() as client:
                     r = await client.request(method, f"{url}/api{path}", params=params,
-                                             json=json_body, headers=headers)
+                                             json=json_body, data=form, files=files, headers=headers)
             except httpx.HTTPError as e:
                 raise KnowledgeError(MODULE, "unreachable",
                                      f"could not reach Open Notebook ({type(e).__name__}).",
@@ -424,13 +513,12 @@ class OpenNotebookModule(Module):
             if len(content) > MAX_NOTE_CHARS:
                 raise KnowledgeError(MODULE, "bad_input", f"content is longer than {MAX_NOTE_CHARS} characters.",
                                      "split it into several notes.")
-            check_text(title, "title")
-            check_text(content, "content")
-
             name = await notebook_name(notebook_id)
             allowlist = _allowlist(config)
             outside = bool(allowlist) and name.lower() not in allowlist
             base = dict(title=title, notebook_id=notebook_id, notebook_name=name, content_chars=len(content))
+            details = {"notebook": name, "title": title, "content_chars": len(content)}
+            _scan(config, "open_notebook_note_create", (title, "title"), (content, "content"), details=details)
 
             if not confirm:
                 note = "Preview only. Call again with confirm=true; you will be asked to approve it."
@@ -446,17 +534,22 @@ class OpenNotebookModule(Module):
             elif allowlist and not outside:
                 approved_by = "allowlist"
             elif _can_ask_person(ctx):
+                log_decision(config.env, "open_notebook_note_create", "requested", None, details)
                 answer = await ctx.elicit(_approval_text(title, name, content), WriteApproval)
                 if answer.action != "accept" or not answer.data.create:
+                    log_decision(config.env, "open_notebook_note_create", "declined", None, details)
                     return NoteWrite(created=False, note="You declined. Nothing was saved.", **base)
                 approved_by = "person"
             else:
+                log_decision(config.env, "open_notebook_note_create", "refused", None,
+                             {**details, "reason": "approval_unavailable"})
                 raise KnowledgeError(
                     MODULE, "approval_unavailable",
                     "this MCP client cannot ask you to approve a write, and the notebook is not pre-approved.",
                     "set KNOWLEDGE_OPEN_NOTEBOOK_ALLOWED_NOTEBOOKS to the notebook names the assistant may write "
                     "to, or KNOWLEDGE_OPEN_NOTEBOOK_REQUIRE_CONFIRM=false to let it write on its own.",
                 )
+            log_decision(config.env, "open_notebook_note_create", "approved", approved_by, details)
 
             data = await call("POST", "/notes", json_body={
                 "title": title, "content": content, "note_type": "human", "notebook_id": notebook_id,
@@ -465,4 +558,101 @@ class OpenNotebookModule(Module):
                 created=True, id=data.get("id"), approved_by=approved_by,
                 embedding_command_id=data.get("command_id"),
                 note="Saved. Search indexing runs in the background and may take a moment.", **base,
+            )
+
+        @mcp.tool(annotations=WRITES_SOURCE)
+        async def open_notebook_add_source(
+            ctx: Context, notebook_id: str, url: str | None = None, file_path: str | None = None,
+            title: str | None = None, confirm: bool = False,
+        ) -> SourceWrite:
+            """Add a web link or a local file as a source in one notebook. Give exactly one of url or file_path.
+            Without confirm=true it only returns a preview. With confirm=true you are asked to approve it; the
+            assistant cannot approve for you. A local file is always approved by you, with its full path and
+            size shown, and is never pre-approved in settings. Open Notebook processes the source in the
+            background: check progress with open_notebook_source_get."""
+            _check_id(notebook_id, NOTEBOOK_ID, "notebook_id", "notebook:<id>")
+            if bool(url) == bool(file_path):
+                raise KnowledgeError(MODULE, "bad_input", "give exactly one of url or file_path.",
+                                     "pass a web address as url, or a file on this computer as file_path.")
+            title = (title or "").strip() or None
+            if title and (len(title) > MAX_TITLE_CHARS or any(ord(c) < 32 for c in title)):
+                raise KnowledgeError(MODULE, "bad_input",
+                                     f"title must be 1 to {MAX_TITLE_CHARS} characters with no control characters.",
+                                     "give the source a short plain title, or leave it out.")
+            name = await notebook_name(notebook_id)
+            allowlist = _allowlist(config)
+            outside = bool(allowlist) and name.lower() not in allowlist
+
+            if url is not None:
+                kind = "link"
+                link, display = _link_parts(url)
+                details = {"notebook": name, "kind": kind, "target": display, "title": title}
+                _scan(config, "open_notebook_add_source", (link, "url"), *([(title, "title")] if title else []),
+                      details=details)
+                path, data, scan, size, label = None, None, "not needed (a link)", None, display
+                question = ["Add this link to Open Notebook?", f"Notebook: {name!r}", f"Link: {link}"]
+            else:
+                kind = "file"
+                details = {"notebook": name, "kind": kind, "target": Path(file_path).name, "title": title}
+                path, data, scan = _local_file(file_path, config, details)
+                size, label = len(data), path.name
+                details.update(size_bytes=size)
+                if title:
+                    _scan(config, "open_notebook_add_source", (title, "title"), details=details)
+                question = ["Upload this file to Open Notebook?", f"Notebook: {name!r}", f"File: {path}",
+                            f"Size: {size} bytes", f"Credential scan: {scan}"]
+            if title:
+                question.append(f"Title: {title!r}")
+
+            if not confirm:
+                note = "Preview only. Nothing was sent. Call again with confirm=true; you will be asked to approve it."
+                if kind == "file":
+                    note = ("Preview only. Nothing was sent. Call again with confirm=true; you will be asked to "
+                            "approve this file, with its path and size shown.")
+                elif outside:
+                    note += f" Notebook {name!r} is not in KNOWLEDGE_OPEN_NOTEBOOK_ALLOWED_NOTEBOOKS."
+                return SourceWrite(created=False, kind=kind, notebook_id=notebook_id, notebook_name=name,
+                                   target=label, size_bytes=size, path=str(path) if path else None, note=note)
+
+            base = dict(kind=kind, notebook_id=notebook_id, notebook_name=name, target=label, size_bytes=size)
+            approved_by = None
+            if kind == "link" and not config.flag(MODULE, "require_confirm", True):
+                approved_by = "settings"
+            elif kind == "link" and allowlist and not outside:
+                approved_by = "allowlist"
+            elif _can_ask_person(ctx):
+                log_decision(config.env, "open_notebook_add_source", "requested", None, details)
+                answer = await ctx.elicit("\n".join(question), WriteApproval)
+                if answer.action != "accept" or not answer.data.create:
+                    log_decision(config.env, "open_notebook_add_source", "declined", None, details)
+                    return SourceWrite(created=False, note="You declined. Nothing was sent.", **base)
+                approved_by = "person"
+            else:
+                log_decision(config.env, "open_notebook_add_source", "refused", None,
+                             {**details, "reason": "approval_unavailable"})
+                hint = ("this MCP client cannot ask you to approve. Local files need an app that can ask, "
+                        "because they are never pre-approved. Add a link instead, or use a client that asks.") \
+                    if kind == "file" else (
+                        "set KNOWLEDGE_OPEN_NOTEBOOK_ALLOWED_NOTEBOOKS to the notebook names the assistant may add "
+                        "sources to, or KNOWLEDGE_OPEN_NOTEBOOK_REQUIRE_CONFIRM=false to let it add links on its own.")
+                raise KnowledgeError(MODULE, "approval_unavailable",
+                                     "this MCP client cannot ask you to approve a source, and it is not pre-approved.",
+                                     hint)
+            log_decision(config.env, "open_notebook_add_source", "approved", approved_by, details)
+
+            form = {"type": "link" if kind == "link" else "upload", "notebooks": json.dumps([notebook_id]),
+                    "embed": "true", "async_processing": "true"}
+            if title:
+                form["title"] = title
+            files = None
+            if kind == "link":
+                form["url"] = link
+            else:
+                files = {"file": (path.name, data, "application/octet-stream")}
+            sent = await call("POST", "/sources", form=form, files=files)
+            return SourceWrite(
+                created=True, source_id=sent.get("id"), command_id=sent.get("command_id"),
+                status=sent.get("status"), approved_by=approved_by,
+                note="Saved. Open Notebook processes it in the background; check with open_notebook_source_get.",
+                **base,
             )

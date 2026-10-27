@@ -1,6 +1,6 @@
 [project]
 name = "knowledge-bundle-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "MCP bundle for people with a self-hosted knowledge base. First module: Open Notebook."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ dependencies = [
     "httpx>=0.27",
     "pydantic>=2.7",
 ]
-keywords = ["mcp", "model-context-protocol", "open-notebook", "knowledge-base", "notes"]
+keywords = ["mcp", "model-context-protocol", "open-notebook", "knowledge-base", "notes", "skills"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -35,6 +35,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/knowledge_mcp"]
+
+# One source for the skills: the repo's skills/ folder ships inside the package too,
+# so the server can serve it as MCP prompts and resources.
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "knowledge_mcp/skills"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "skills", "tests", "scripts", "README.md", "LICENSE", "CREDITS.md", "SECURITY.md", "CHANGELOG.md", "server.json", "tool-manifest.lock.json", ".claude-plugin", ".mcp.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

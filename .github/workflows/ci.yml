@@ -14,6 +14,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv -p ${{ matrix.python }} && uv pip install -e '.[dev]'
       - run: .venv/bin/pytest -q
+      - run: python3 scripts/check_skills.py
+      - run: .venv/bin/python scripts/tool_lock.py --check
+      - run: .venv/bin/python scripts/security_card.py --check
   scan:
     runs-on: ubuntu-latest
     steps:

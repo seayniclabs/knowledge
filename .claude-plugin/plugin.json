@@ -1,0 +1,10 @@
+{
+  "name": "knowledge",
+  "version": "0.2.0",
+  "description": "Search and write your self-hosted Open Notebook from your AI assistant, plus skills for meeting notes, decision records, weekly reviews and source-backed research. By Seaynic Labs.",
+  "author": { "name": "Seaynic Labs", "url": "https://seayniclabs.com" },
+  "homepage": "https://github.com/seayniclabs/knowledge",
+  "repository": "https://github.com/seayniclabs/knowledge",
+  "license": "MIT",
+  "keywords": ["mcp", "open-notebook", "knowledge-base", "notes", "skills"]
+}

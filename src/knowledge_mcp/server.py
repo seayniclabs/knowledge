@@ -9,12 +9,17 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 
 from . import __version__
+from . import skills as skills_mod
 from .config import Config, config_path
 from .modules import ClientFactory, Module, all_modules, default_client_factory
+
+PUBLISHER = "Seaynic Labs"
+HOMEPAGE = "https://github.com/seayniclabs/knowledge"
 
 INSTRUCTIONS = (
     "Knowledge connects to your self-hosted knowledge base (first module: Open Notebook). "
     "Call knowledge_modules first: it says which modules are on, which settings are missing, and what each tool does. "
+    "Skills (MCP prompts) explain how to do the job well; start with the getting-started prompt. "
     "Tools return structured results; errors read 'knowledge.<module>.<code>: <message> Fix: <hint>'."
 )
 
@@ -36,10 +41,19 @@ class ModuleInfo(BaseModel):
     settings: list[SettingInfo] | None = None
 
 
+class SkillInfo(BaseModel):
+    name: str
+    description: str
+    license: str
+
+
 class ModulesResult(BaseModel):
     version: str
     config_file: str
     modules: list[ModuleInfo]
+    skills: list[SkillInfo]
+    publisher: str = PUBLISHER
+    homepage: str = HOMEPAGE
 
 
 def build_server(
@@ -57,6 +71,8 @@ def build_server(
     for module in modules:
         if config.enabled(module.name, module.default_enabled):
             module.register(mcp, config, client_factory)
+
+    loaded_skills = skills_mod.register(mcp, "knowledge")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def knowledge_modules(module: str | None = None) -> ModulesResult:
@@ -79,7 +95,10 @@ def build_server(
                     for s in m.settings
                 ]
             infos.append(info)
-        return ModulesResult(version=__version__, config_file=str(config_path(config.env)), modules=infos)
+        return ModulesResult(
+            version=__version__, config_file=str(config_path(config.env)), modules=infos,
+            skills=[SkillInfo(name=s["name"], description=s["description"], license=s["license"]) for s in loaded_skills],
+        )
 
     return mcp
 
@@ -90,7 +109,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="127.0.0.1", help="HTTP only. Keep 127.0.0.1 unless you add auth in front.")
     parser.add_argument("--port", type=int, default=8765, help="HTTP only.")
     parser.add_argument("--version", action="version", version=f"knowledge-mcp {__version__}")
+    parser.add_argument("--doctor", action="store_true", help="Check settings and the Open Notebook connection, print fixes, and exit.")
     args = parser.parse_args(argv)
+
+    if args.doctor:
+        from .doctor import run
+        raise SystemExit(run())
 
     if args.transport == "http":
         build_server(host=args.host, port=args.port).run(transport="streamable-http")
