@@ -1,6 +1,6 @@
 {
   "name": "knowledge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Search and write your self-hosted Open Notebook from your AI assistant, plus skills for meeting notes, decision records, weekly reviews and source-backed research. By Seaynic Labs.",
   "author": { "name": "Seaynic Labs", "url": "https://seayniclabs.com" },
   "homepage": "https://github.com/seayniclabs/knowledge",

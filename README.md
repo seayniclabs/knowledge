@@ -51,7 +51,7 @@ pip install knowledge-bundle-mcp
 **Pinned install.** For a fixed setup, pin the exact version. The plugin manifest pins it the same way:
 
 ```bash
-uvx knowledge-bundle-mcp==0.2.0 --version
+uvx knowledge-bundle-mcp==0.2.1 --version
 ```
 
 **As a Claude Code plugin.** One install gives you the MCP server and the skills. This needs the `seayniclabs/plugins` marketplace, which is published with the release:

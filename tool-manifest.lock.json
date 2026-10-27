@@ -1,6 +1,6 @@
 {
   "bundle": "knowledge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "entries": {
     "instructions": "8fb439492e5a56e1981884a43ee20645d30ced7c1fe8cbe0c5226e15f9d153fc",
     "prompt:decision-record": "b698a8ab840c6f56adea692f77b0b8d06b27a52503c8290f4547fb426545a7cd",

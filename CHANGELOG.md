@@ -2,6 +2,14 @@
 
 Knowledge follows [semantic versioning](https://semver.org). Modules added after 0.1 ship switched off.
 
+## 0.2.1 — 2026-10-27
+
+**No code changes.** Change the pin to `knowledge-bundle-mcp==0.2.1`.
+
+### Release process
+
+- Built and published by GitHub Actions (`release.yml`) with PyPI trusted publishing. The wheel and sdist carry PyPI provenance and a GitHub build attestation; check a download with `gh attestation verify <file> --owner seayniclabs`.
+
 ## 0.2.0 — 2026-10-27
 
 - **Skills.** Six skills ship in the package and as MCP prompts (one per skill) with their files as resources: `getting-started`, `weekly-review`, `research-with-sources`, `meeting-notes`, `decision-record`, and the credited third-party skills `icm-architect` and `obsidian-markdown` (MIT, with their license files and pinned sources in `CREDITS.md`).
