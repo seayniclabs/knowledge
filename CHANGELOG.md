@@ -6,7 +6,7 @@ Knowledge follows [semantic versioning](https://semver.org). Modules added after
 
 - Fix: the command is now `knowledge-bundle-mcp`, matching the package name, so `uvx knowledge-bundle-mcp` works. `knowledge-mcp` still works too.
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-10-27 (on PyPI; its command name did not match the package, use 0.1.1)
 
 - First release as one bundle, with one module: `open_notebook` (Open Notebook over its REST API).
 - `knowledge_modules` discovery tool: which modules are on, which settings are missing, what each tool does.
