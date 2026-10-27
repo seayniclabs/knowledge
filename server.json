@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.seayniclabs/knowledge",
+  "description": "Search, read and write your self-hosted Open Notebook knowledge base from an AI assistant.",
+  "repository": {
+    "url": "https://github.com/seayniclabs/knowledge",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "knowledge-bundle-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "KNOWLEDGE_OPEN_NOTEBOOK_URL",
+          "description": "Address of your Open Notebook server, e.g. https://notebook.example.com",
+          "isRequired": false
+        },
+        {
+          "name": "KNOWLEDGE_OPEN_NOTEBOOK_PASSWORD",
+          "description": "Password for your Open Notebook server, if it has one",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "KNOWLEDGE_OPEN_NOTEBOOK_REQUIRE_CONFIRM",
+          "description": "true (default): you approve each new note. false: the assistant may write on its own",
+          "isRequired": false
+        },
+        {
+          "name": "KNOWLEDGE_OPEN_NOTEBOOK_ALLOWED_NOTEBOOKS",
+          "description": "Comma-separated notebook names the assistant may write to without asking",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
