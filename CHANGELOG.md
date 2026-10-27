@@ -2,6 +2,10 @@
 
 Knowledge follows [semantic versioning](https://semver.org). Modules added after 0.1 ship switched off.
 
+## 0.1.1 — 2026-10-27
+
+- Fix: the command is now `knowledge-bundle-mcp`, matching the package name, so `uvx knowledge-bundle-mcp` works. `knowledge-mcp` still works too.
+
 ## 0.1.0 — unreleased
 
 - First release as one bundle, with one module: `open_notebook` (Open Notebook over its REST API).

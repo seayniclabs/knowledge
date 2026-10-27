@@ -1,6 +1,6 @@
 [project]
 name = "knowledge-bundle-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP bundle for people with a self-hosted knowledge base. First module: Open Notebook."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,7 @@ Repository = "https://github.com/seayniclabs/knowledge"
 dev = ["pytest>=8"]
 
 [project.scripts]
+knowledge-bundle-mcp = "knowledge_mcp.server:main"
 knowledge-mcp = "knowledge_mcp.server:main"
 
 [build-system]

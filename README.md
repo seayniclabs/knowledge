@@ -78,7 +78,7 @@ Most clients use the same JSON shape. Put it where your client keeps MCP servers
 **Over HTTP.** For clients that connect to a URL instead of launching a process:
 
 ```bash
-knowledge-mcp --transport http --port 8765
+knowledge-bundle-mcp --transport http --port 8765
 ```
 
 It serves streamable HTTP at `http://127.0.0.1:8765/mcp`. It listens only on your own machine by default. Put authentication in front of it before exposing it anywhere else.
