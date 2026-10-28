@@ -227,13 +227,13 @@ def _approval_text(title: str, notebook_name: str, content: str) -> str:
     ])
 
 
-def _scan(config: Config, tool: str, *fields: tuple[str, str], details: dict) -> None:
+def _scan(config: Config, tool: str, *fields: tuple[str, str], details: dict, ctx: object | None = None) -> None:
     """Refuse text that looks like a credential. Logs the refusal with the kinds found, never the value."""
     for text, field in fields:
         kinds = find_credential_kinds(text)
         if kinds:
             log_decision(config.env, tool, "refused", None,
-                         {**details, "reason": "blocked_secret", "field": field, "kinds": kinds})
+                         {**details, "reason": "blocked_secret", "field": field, "kinds": kinds}, ctx)
             check_text(text, field)  # raises the readable error
 
 
@@ -255,7 +255,7 @@ def _link_parts(raw: str) -> tuple[str, str]:
     return link, display
 
 
-def _local_file(raw: str, config: Config, details: dict) -> tuple[Path, bytes, str]:
+def _local_file(raw: str, config: Config, details: dict, ctx: object | None = None) -> tuple[Path, bytes, str]:
     """Read a local file the person named, after the safety checks. Returns (path, bytes, scan result).
 
     Nothing is sent here. The bytes are used only if the person then approves the exact path and size.
@@ -274,7 +274,7 @@ def _local_file(raw: str, config: Config, details: dict) -> tuple[Path, bytes, s
         refuse = "it is inside a folder that holds credentials"
     if refuse:
         log_decision(config.env, "open_notebook_add_source", "refused", None,
-                     {**details, "reason": "path_refused"})
+                     {**details, "reason": "path_refused"}, ctx)
         raise KnowledgeError(MODULE, "path_refused", f"Knowledge will not send this file: {refuse}. Nothing was sent.",
                              "copy the text you need into a new file without the secrets, or add a link instead.")
     size = path.stat().st_size
@@ -291,7 +291,7 @@ def _local_file(raw: str, config: Config, details: dict) -> tuple[Path, bytes, s
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return path, data, "not run (the file is not plain text)"
-    _scan(config, "open_notebook_add_source", (text, "file"), details=details)
+    _scan(config, "open_notebook_add_source", (text, "file"), details=details, ctx=ctx)
     return path, data, "passed"
 
 
@@ -525,7 +525,7 @@ class OpenNotebookModule(Module):
             outside = bool(allowlist) and name.lower() not in allowlist
             base = dict(title=title, notebook_id=notebook_id, notebook_name=name, content_chars=len(content))
             details = {"notebook": name, "title": title, "content_chars": len(content)}
-            _scan(config, "open_notebook_note_create", (title, "title"), (content, "content"), details=details)
+            _scan(config, "open_notebook_note_create", (title, "title"), (content, "content"), details=details, ctx=ctx)
 
             if not confirm:
                 note = "Preview only. Call again with confirm=true; you will be asked to approve it."
@@ -541,22 +541,22 @@ class OpenNotebookModule(Module):
             elif allowlist and not outside:
                 approved_by = "allowlist"
             elif _can_ask_person(ctx):
-                log_decision(config.env, "open_notebook_note_create", "requested", None, details)
+                log_decision(config.env, "open_notebook_note_create", "requested", None, details, ctx)
                 answer = await ctx.elicit(_approval_text(title, name, content), WriteApproval)
                 if answer.action != "accept" or not answer.data.create:
-                    log_decision(config.env, "open_notebook_note_create", "declined", None, details)
+                    log_decision(config.env, "open_notebook_note_create", "declined", None, details, ctx)
                     return NoteWrite(created=False, note="You declined. Nothing was saved.", **base)
                 approved_by = "person"
             else:
                 log_decision(config.env, "open_notebook_note_create", "refused", None,
-                             {**details, "reason": "approval_unavailable"})
+                             {**details, "reason": "approval_unavailable"}, ctx)
                 raise KnowledgeError(
                     MODULE, "approval_unavailable",
                     "this MCP client cannot ask you to approve a write, and the notebook is not pre-approved.",
                     "set KNOWLEDGE_OPEN_NOTEBOOK_ALLOWED_NOTEBOOKS to the notebook names the assistant may write "
                     "to, or KNOWLEDGE_OPEN_NOTEBOOK_REQUIRE_CONFIRM=false to let it write on its own.",
                 )
-            log_decision(config.env, "open_notebook_note_create", "approved", approved_by, details)
+            log_decision(config.env, "open_notebook_note_create", "approved", approved_by, details, ctx)
 
             data = await call("POST", "/notes", json_body={
                 "title": title, "content": content, "note_type": "human", "notebook_id": notebook_id,
@@ -595,17 +595,17 @@ class OpenNotebookModule(Module):
                 link, display = _link_parts(url)
                 details = {"notebook": name, "kind": kind, "target": display, "title": title}
                 _scan(config, "open_notebook_add_source", (link, "url"), *([(title, "title")] if title else []),
-                      details=details)
+                      details=details, ctx=ctx)
                 path, data, scan, size, label = None, None, "not needed (a link)", None, display
                 question = ["Add this link to Open Notebook?", f"Notebook: {name!r}", f"Link: {link!r}"]
             else:
                 kind = "file"
                 details = {"notebook": name, "kind": kind, "target": Path(file_path).name, "title": title}
-                path, data, scan = _local_file(file_path, config, details)
+                path, data, scan = _local_file(file_path, config, details, ctx)
                 size, label = len(data), path.name
                 details.update(size_bytes=size)
                 if title:
-                    _scan(config, "open_notebook_add_source", (title, "title"), details=details)
+                    _scan(config, "open_notebook_add_source", (title, "title"), details=details, ctx=ctx)
                 question = ["Upload this file to Open Notebook?", f"Notebook: {name!r}", f"File: {str(path)!r}",
                             f"Size: {size} bytes", f"Credential scan: {scan}"]
             if title:
@@ -628,15 +628,15 @@ class OpenNotebookModule(Module):
             elif kind == "link" and allowlist and not outside:
                 approved_by = "allowlist"
             elif _can_ask_person(ctx):
-                log_decision(config.env, "open_notebook_add_source", "requested", None, details)
+                log_decision(config.env, "open_notebook_add_source", "requested", None, details, ctx)
                 answer = await ctx.elicit("\n".join(question), WriteApproval)
                 if answer.action != "accept" or not answer.data.create:
-                    log_decision(config.env, "open_notebook_add_source", "declined", None, details)
+                    log_decision(config.env, "open_notebook_add_source", "declined", None, details, ctx)
                     return SourceWrite(created=False, note="You declined. Nothing was sent.", **base)
                 approved_by = "person"
             else:
                 log_decision(config.env, "open_notebook_add_source", "refused", None,
-                             {**details, "reason": "approval_unavailable"})
+                             {**details, "reason": "approval_unavailable"}, ctx)
                 hint = ("this MCP client cannot ask you to approve. Local files need an app that can ask, "
                         "because they are never pre-approved. Add a link instead, or use a client that asks.") \
                     if kind == "file" else (
@@ -645,7 +645,7 @@ class OpenNotebookModule(Module):
                 raise KnowledgeError(MODULE, "approval_unavailable",
                                      "this MCP client cannot ask you to approve a source, and it is not pre-approved.",
                                      hint)
-            log_decision(config.env, "open_notebook_add_source", "approved", approved_by, details)
+            log_decision(config.env, "open_notebook_add_source", "approved", approved_by, details, ctx)
 
             form = {"type": "link" if kind == "link" else "upload", "notebooks": json.dumps([notebook_id]),
                     "embed": "true", "async_processing": "true"}

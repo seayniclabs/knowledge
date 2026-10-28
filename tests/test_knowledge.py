@@ -392,7 +392,7 @@ def log_lines(path):
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
-def ask(tool, args, answer, env=OPEN, handler=None, seen=None):
+def ask(tool, args, answer, env=OPEN, handler=None, seen=None, client_info=None):
     """Call a tool through a real MCP client. answer: True/False to approve or decline; None = client cannot ask."""
     from mcp.shared.memory import create_connected_server_and_client_session
     from mcp.types import ElicitResult
@@ -408,7 +408,7 @@ def ask(tool, args, answer, env=OPEN, handler=None, seen=None):
     async def run():
         async with create_connected_server_and_client_session(
                 server(env, handler or handler_factory(seen if seen is not None else [])),
-                elicitation_callback=on_elicit) as client:
+                client_info=client_info, elicitation_callback=on_elicit) as client:
             r = await client.call_tool(tool, args)
             if r.isError:
                 raise RuntimeError(r.content[0].text)
@@ -506,6 +506,24 @@ def test_approved_note_is_logged_with_who_approved(tmp_path):
     call(server(env, handler_factory([])), "open_notebook_note_create",
          notebook_id=NB, title="Plan", content="Ship it.", confirm=True)
     assert [(e["decision"], e["approved_by"]) for e in log_lines(log)] == [("approved", "allowlist")]
+
+
+def test_approval_log_names_the_client_that_answered(tmp_path):
+    """Every row names the app that answered, so a scripted accept is not a human click."""
+    from mcp.types import Implementation
+
+    log = tmp_path / "approvals.jsonl"
+    out, _ = ask("open_notebook_note_create",
+                 {"notebook_id": NB, "title": "Plan", "content": "Ship it.", "confirm": True},
+                 True, env={**OPEN, "KNOWLEDGE_APPROVAL_LOG": str(log)},
+                 client_info=Implementation(name="demo-harness", version="1.2.3"))
+    assert out["created"] is True
+    rows = log_lines(log)
+    assert [r["decision"] for r in rows] == ["requested", "approved"]
+    for row in rows:
+        assert row["client"] == {"name": "demo-harness", "version": "1.2.3"}
+    # approved_by is unchanged: it says a person answered, the client says which app asked them.
+    assert rows[-1]["approved_by"] == "person"
 
 
 def test_refused_note_is_logged(tmp_path):
